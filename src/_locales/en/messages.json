@@ -1,4 +1,8 @@
 {
+    "openDialpad": {
+        "message": "Dialpad",
+        "description": "Open dialpad widget."
+    },
     "extTitle": {
         "message": "Click-to-dial",
         "description": "Plugin title."

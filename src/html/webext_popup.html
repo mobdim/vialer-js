@@ -35,6 +35,37 @@
                 </div>
             </div>
 
+            <div class="widget dialpad" data-opened="false" data-widget="dialer">
+                <div class="widget-header">
+                    <div class="widget-header-icons">
+                        <i class="widget-icon icon-phone"></i>
+                        <i class="busy-icon icon-refresh icon-spin"></i>
+                        <i class="unauthorized-icon fa fa-exclamation-triangle hide"></i>
+                    </div>
+
+                    <div class="widget-header-text">Dialpad</div>
+                </div>
+
+                <div class="widget-content">
+                    <input class="number" type="text" placeholder="Number to dial, e.g. 2000"></input>
+                    <button class="call">Call</button>
+                    <button class="end-call">End Call</button>
+                    <div class="dialpad-container">
+                        <div class="dialpad">
+                            <button id="1" class="keys">1</button>
+                            <button id="2" class="keys">2</button>
+                            <button id="3" class="keys">3</button>
+                            <button id="4" class="keys">4</button>
+                            <button id="5" class="keys">5</button>
+                            <button id="6" class="keys">6</button>
+                            <button id="7" class="keys">7</button>
+                            <button id="8" class="keys">8</button>
+                            <button id="9" class="keys">9</button>
+                            <button id="0" class="keys">0</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="widget availability" data-opened="false" data-widget="availability">
                 <div class="widget-header">
@@ -129,7 +160,7 @@
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="unauthorized-warning hide" data-i18n-content="contactsUnauthorizedWarning"></div>
             </div>
 
@@ -176,7 +207,6 @@
 
                 <div class="unauthorized-warning hide" data-i18n-content="queuesUnauthorizedWarning"></div>
             </div>
-
         </div>
     </body>
 

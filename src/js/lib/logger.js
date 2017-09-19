@@ -54,6 +54,10 @@ class Logger {
             title: title,
             type: 'basic',
         }
+
+        // In Electron, the message body with libnotify is passed with
+        // the body parameter.
+        if (this.app.env.electron) options.body = message
         if (this.app.env.extension) {
             options.iconUrl = this.app.browser.runtime.getURL('img/logo.png')
             if (!stack) chrome.notifications.clear('c2d')
@@ -62,14 +66,14 @@ class Logger {
             options.iconUrl = 'img/clicktodial.png'
             if (Notification.permission === 'granted') {
                 if (!stack && this._notification) this._notification.close()
-                this._notification = new Notification(message, options) // eslint-disable-line no-new
+                this._notification = new Notification(title, options) // eslint-disable-line no-new
             } else if (Notification.permission !== 'denied') {
                 // Create a notification after the user
                 // accepted the permission.
                 Notification.requestPermission(function(permission) {
                     if (permission === 'granted') {
                         if (!stack && this._notification) this._notification.close()
-                        this._notification = new Notification(message, options) // eslint-disable-line no-new
+                        this._notification = new Notification(title, options) // eslint-disable-line no-new
                     }
                 })
             }

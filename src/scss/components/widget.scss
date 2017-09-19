@@ -28,6 +28,7 @@
         @include vg-gradient;
         @include no-select;
         position: relative;
+        width: 100%;
         height: $vg-widget-header-size;
         font-weight: 400;
 

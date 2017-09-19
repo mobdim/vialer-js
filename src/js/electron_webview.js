@@ -1,7 +1,7 @@
 /**
 * This is the click-to-dial app that runs all scripts
 * combined, replacing all ipc messaging with local
-* event emitters. This version also runs in Electron as
+* event emitters. This version runs in Electron as
 * a desktop app.
 */
 const ClickToDialApp = require('./lib/app')

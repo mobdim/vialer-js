@@ -1,9 +1,4 @@
-const electron = require('electron')
-// Module to control application life.
-const app = electron.app
-const Tray = electron.Tray
-// Module to create native browser window.
-const BrowserWindow = electron.BrowserWindow
+const {app, BrowserWindow, Tray} = require('electron')
 
 const path = require('path')
 const url = require('url')
@@ -15,7 +10,7 @@ const {ipcMain} = require('electron')
 let mainWindow
 
 function createWindow() {
-    let tray = new Tray(path.join(__dirname, 'img', 'clicktodial.png'))
+    let tray = new Tray(path.join(__dirname, 'img', 'call-green.png'))
     tray.setToolTip('This is my application.')
 
 
@@ -37,7 +32,7 @@ function createWindow() {
         }
     })
 
-    mainWindow.setIcon(path.join(__dirname, 'img', 'clicktodial.png'))
+    mainWindow.setIcon(path.join(__dirname, 'img', 'logo.png'))
     // and load the index.html of the app.
     mainWindow.loadURL(url.format({
         pathname: path.join(__dirname, 'electron_webview.html'),
