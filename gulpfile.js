@@ -55,7 +55,6 @@ const SRC_DIR = path.join(__dirname, 'src')
 const WATCHLINKED = argv.linked ? argv.linked : false
 const WITHDOCS = argv.docs ? argv.docs : false
 
-let BRAND = require('./src/brand.json')
 let PRODUCTION
 let NODE_ENV
 
@@ -64,9 +63,12 @@ let VERBOSE = false
 if ((process.env.VERBOSE === 'true') || (process.env.VERBOSE === '1')) VERBOSE = true
 
 // Loads the json API settings from ~/.vialer-jsrc.
-let DEPLOY_SETTINGS = {}
-rc('vialer-js', DEPLOY_SETTINGS)
-DEPLOY_SETTINGS.audience = argv.audience ? argv.audience : 'trustedTesters'
+let VIALER_SETTINGS = {}
+rc('vialer-js', VIALER_SETTINGS)
+VIALER_SETTINGS.audience = argv.audience ? argv.audience : 'trustedTesters'
+
+// Specify the brand target or fallback to `vialer` as default.
+const BRAND_TARGET = argv.brand ? argv.brand : 'vialer'
 
 // Some additional variable processing.
 // Verify that the build target is valid.
@@ -76,7 +78,7 @@ if (!BUILD_TARGETS.includes(BUILD_TARGET)) {
     process.exit()
 }
 gutil.log(`Build target: ${BUILD_TARGET}`)
-
+gutil.log(`Brand target: ${BRAND_TARGET}`)
 
 // Force production mode when running certain tasks from
 // the commandline. Use this with care.
@@ -90,7 +92,7 @@ if (['deploy', 'build-dist'].includes(GULPACTION)) {
 NODE_ENV = process.env.NODE_ENV || 'development'
 
 // Notify developer about some essential build presets.
-if (PRODUCTION) gutil.log('(!) Gulp optimized for production')
+if (PRODUCTION) gutil.log(`Production mode: ${PRODUCTION}`)
 
 let bundlers = {
     bg: null,
@@ -125,10 +127,10 @@ const getManifest = () => {
     let manifest = require('./src/manifest.json')
     // The 16x16px icon is used for the context menu.
     // It is different from the logo.
-    manifest.name = BRAND.name
-    manifest.browser_action.default_title = BRAND.name
-    manifest.permissions.push(BRAND.permissions)
-    manifest.homepage_url = BRAND.homepage_url
+    manifest.name = VIALER_SETTINGS.brands[BRAND_TARGET].name
+    manifest.browser_action.default_title = VIALER_SETTINGS.brands[BRAND_TARGET].name
+    manifest.permissions.push(VIALER_SETTINGS.brands[BRAND_TARGET].permissions)
+    manifest.homepage_url = VIALER_SETTINGS.brands[BRAND_TARGET].homepage_url
     manifest.version = PACKAGE.version
     return manifest
 }
@@ -160,17 +162,18 @@ const jsEntry = (name) => {
             .pipe(buffer())
             .pipe(ifElse(!PRODUCTION, () => sourcemaps.init({loadMaps: true})))
             .pipe(envify({
-                HOMEPAGE: BRAND.homepage_url,
+                ANALYTICS_ID: VIALER_SETTINGS.brands[BRAND_TARGET].analytics_id,
+                HOMEPAGE: VIALER_SETTINGS.brands[BRAND_TARGET].homepage_url,
                 NODE_ENV: NODE_ENV,
-                PLATFORM_URL: BRAND.permissions,
-                SIP_ENDPOINT: BRAND.sip_endpoint,
+                PLATFORM_URL: VIALER_SETTINGS.brands[BRAND_TARGET].permissions,
+                SIP_ENDPOINT: VIALER_SETTINGS.brands[BRAND_TARGET].sip_endpoint,
                 VERBOSE: VERBOSE,
                 VERSION: PACKAGE.version,
             }))
             .pipe(ifElse(PRODUCTION, () => minifier()))
 
             .pipe(ifElse(!PRODUCTION, () => sourcemaps.write('./')))
-            .pipe(gulp.dest(`./build/${BUILD_TARGET}/js`))
+            .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}/js`))
             .pipe(size(_extend({title: `${name}.js`}, sizeOptions)))
     }
 }
@@ -182,7 +185,7 @@ const jsEntry = (name) => {
 * @returns {Function} - Sass function to use.
 */
 const scssEntry = (name) => {
-    const brandColors = formatScssVars(BRAND.colors)
+    const brandColors = formatScssVars(VIALER_SETTINGS.brands[BRAND_TARGET].colors)
     return () => {
         return gulp.src(`./src/scss/${name}.scss`)
             .pipe(insert.prepend(brandColors))
@@ -195,20 +198,20 @@ const scssEntry = (name) => {
             .on('error', notify.onError('Error: <%= error.message %>'))
             .pipe(concat(`${name}.css`))
             .pipe(ifElse(PRODUCTION, () => cleanCSS({advanced: true, level: 2})))
-            .pipe(gulp.dest(`./build/${BUILD_TARGET}/css`))
+            .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}/css`))
             .pipe(size(_extend({title: `scss-${name}`}, sizeOptions)))
     }
 }
 
 
 gulp.task('assets', 'Copy assets to the build directory.', ['fonts'], () => {
-    return gulp.src('./src/img/{*.png,*.jpg}', {base: './src'})
+    return gulp.src(`./src/brand/${BRAND_TARGET}/img/{*.png,*.jpg}`, {base: `./src/brand/${BRAND_TARGET}/`})
         .pipe(ifElse(PRODUCTION, imagemin))
         .pipe(addsrc('./LICENSE'))
         .pipe(addsrc('./README.md'))
         .pipe(addsrc('./src/_locales/**', {base: './src/'}))
         .pipe(addsrc('./src/js/lib/thirdparty/**/*.js', {base: './src/'}))
-        .pipe(gulp.dest(`./build/${BUILD_TARGET}`))
+        .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
         .pipe(size(_extend({title: 'assets'}, sizeOptions)))
         .pipe(ifElse(isWatching, livereload))
 })
@@ -216,7 +219,6 @@ gulp.task('assets', 'Copy assets to the build directory.', ['fonts'], () => {
 
 gulp.task('build', 'Clean existing build and regenerate a new one.', (done) => {
     // Refresh the brand content with each build.
-    BRAND = require('./src/brand.json')
     let targetTasks
     if (BUILD_TARGET === 'electron') targetTasks = ['js-electron-main', 'js-electron-webview', 'js-vendor']
     else targetTasks = ['js-vendor', 'js-webext']
@@ -231,7 +233,7 @@ gulp.task('build-dist', 'Make a build and generate a web-extension zip file.', (
         // the deployable version as closely as possible.
         if (BUILD_TARGET === 'firefox') {
             // eslint-disable-next-line max-len
-            let execCommand = `web-ext build --overwrite-dest --source-dir ./build/${BUILD_TARGET} --artifacts-dir ./dist/${BUILD_TARGET}/`
+            let execCommand = `web-ext build --overwrite-dest --source-dir ./build/${BRAND_TARGET}/${BUILD_TARGET} --artifacts-dir ./dist/${BUILD_TARGET}/`
             let child = childExec(execCommand, undefined, (err, stdout, stderr) => {
                 if (stderr) gutil.log(stderr)
                 if (stdout) gutil.log(stdout)
@@ -242,31 +244,31 @@ gulp.task('build-dist', 'Make a build and generate a web-extension zip file.', (
                 process.stdout.write(`${data.toString()}\r`)
             })
         } else {
-            gulp.src([`./build/${BUILD_TARGET}/**`], {base: `./build/${BUILD_TARGET}`})
+            gulp.src([`./build/${BRAND_TARGET}/${BUILD_TARGET}/**`], {base: `./build/${BRAND_TARGET}/${BUILD_TARGET}`})
                 .pipe(zip(DISTRIBUTION_NAME))
-                .pipe(gulp.dest(`./dist/${BUILD_TARGET}/`))
+                .pipe(gulp.dest(`./dist/${BRAND_TARGET}/${BUILD_TARGET}/`))
                 .on('end', done)
         }
     })
 })
 
 
-gulp.task('build-clean', `Clean build directory ${path.join(BUILD_DIR, BUILD_TARGET)}`, async() => {
-    await del([path.join(BUILD_DIR, BUILD_TARGET, '**')], {force: true})
-    mkdirp(path.join(BUILD_DIR, BUILD_TARGET))
+gulp.task('build-clean', `Clean build directory ${path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET)}`, async() => {
+    await del([path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET, '**')], {force: true})
+    mkdirp(path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET))
 })
 
 
 gulp.task('deploy', (done) => {
     if (BUILD_TARGET === 'chrome') {
         runSequence('build-dist', async function() {
-            const api = DEPLOY_SETTINGS.chrome
-            const zipFile = fs.createReadStream(`./dist/${BUILD_TARGET}/${DISTRIBUTION_NAME}`)
+            const api = VIALER_SETTINGS[BRAND_TARGET].store.chrome
+            const zipFile = fs.createReadStream(`./dist/${BRAND_TARGET}/${BUILD_TARGET}/${DISTRIBUTION_NAME}`)
 
             let targetExtension
 
             // Deploy to production environment.
-            if (DEPLOY_SETTINGS.audience === 'default') {
+            if (VIALER_SETTINGS.audience === 'default') {
                 targetExtension = api.extensionId
             } else {
                 // Deploy to test extension.
@@ -296,7 +298,7 @@ gulp.task('deploy', (done) => {
                 const _res = await webStore.publish('default', token)
                 if (_res.status.includes('OK')) {
                     // eslint-disable-next-line max-len
-                    gutil.log(`Succesfully published extension version ${PACKAGE.version} for ${DEPLOY_SETTINGS.audience}.`)
+                    gutil.log(`Succesfully published extension version ${PACKAGE.version} for ${VIALER_SETTINGS.audience}.`)
                     done()
                 } else {
                     gutil.log(`An error occured during publishing: ${JSON.stringify(_res, null, 4)}`)
@@ -310,9 +312,9 @@ gulp.task('deploy', (done) => {
             // A Firefox extension version number can only be signed and
             // uploaded once using web-ext. The second time will fail with an
             // unobvious reason.
-            const api = DEPLOY_SETTINGS.firefox
+            const api = VIALER_SETTINGS[BRAND_TARGET].store.firefox
             // eslint-disable-next-line max-len
-            let _cmd = `web-ext sign --source-dir ./build/${BUILD_TARGET} --api-key ${api.apiKey} --api-secret ${api.apiSecret} --artifacts-dir ./build/${BUILD_TARGET}`
+            let _cmd = `web-ext sign --source-dir ./build/${BRAND_TARGET}/${BUILD_TARGET} --api-key ${api.apiKey} --api-secret ${api.apiSecret} --artifacts-dir ./build/${BRAND_TARGET}/${BUILD_TARGET}`
             let child = childExec(_cmd, undefined, (err, stdout, stderr) => {
                 if (stderr) gutil.log(stderr)
                 if (stdout) gutil.log(stdout)
@@ -339,7 +341,7 @@ gulp.task('docs', 'Generate documentation.', (done) => {
 
 
 gulp.task('docs-deploy', 'Push the docs build directory to github pages.', ['docs'], () => {
-    return gulp.src(`${BUILD_DIR}/docs/**/*`).pipe(ghPages())
+    return gulp.src(`${BRAND_TARGET}/${BUILD_DIR}/docs/**/*`).pipe(ghPages())
 })
 
 
@@ -351,7 +353,7 @@ gulp.task('fonts', 'Copy fonts to the build directory.', () => {
         .pipe(addsrc(path.join(robotoBasePath, 'Roboto-Regular.woff2')))
         .pipe(addsrc(path.join(robotoBasePath, 'Roboto-Medium.woff2')))
         .pipe(flatten())
-        .pipe(gulp.dest(`./build/${BUILD_TARGET}/fonts`))
+        .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}/fonts`))
         .pipe(size(_extend({title: 'fonts'}, sizeOptions)))
 })
 
@@ -378,7 +380,7 @@ gulp.task('html', 'Add html to the build directory.', () => {
         .pipe(flatten())
         .pipe(ifElse((target === 'electron'), () => rename('electron_webview.html')))
         .pipe(ifElse((target === 'webext'), () => addsrc(path.join('src', 'html', 'webext_{options,callstatus}.html'))))
-        .pipe(gulp.dest(`./build/${BUILD_TARGET}`))
+        .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
         .pipe(ifElse(isWatching, livereload))
 })
 
@@ -395,7 +397,7 @@ gulp.task('js-electron', 'Generate electron js.', (done) => {
 gulp.task('js-electron-main', 'Generate electron main thread js.', ['js-electron-webview'], () => {
     return gulp.src('./src/js/electron_main.js', {base: './src/js/'})
         .pipe(ifElse(PRODUCTION, () => minifier()))
-        .pipe(gulp.dest(`./build/${BUILD_TARGET}`))
+        .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
         .pipe(size(_extend({title: 'electron-main'}, sizeOptions)))
         .pipe(ifElse(isWatching, livereload))
 })
@@ -426,7 +428,7 @@ gulp.task('js-webext-tab', 'Generate webextension tab js.', jsEntry('webext_tab'
 gulp.task('manifest-webext-chrome', 'Generate a web-extension manifest for Chrome.', async() => {
     let manifest = getManifest()
     manifest.options_ui.chrome_style = false
-    const manifestTarget = path.join(__dirname, 'build', BUILD_TARGET, 'manifest.json')
+    const manifestTarget = path.join(__dirname, 'build', BRAND_TARGET, BUILD_TARGET, 'manifest.json')
     await writeFileAsync(manifestTarget, JSON.stringify(manifest, null, 4))
 })
 
@@ -435,9 +437,9 @@ gulp.task('manifest-webext-firefox', 'Generate a web-extension manifest for Fire
     let manifest = getManifest()
     manifest.options_ui.browser_style = true
     manifest.applications = {
-        gecko: DEPLOY_SETTINGS.firefox.gecko,
+        gecko: VIALER_SETTINGS.firefox.gecko,
     }
-    const manifestTarget = path.join(__dirname, 'build', BUILD_TARGET, 'manifest.json')
+    const manifestTarget = path.join(__dirname, 'build', BRAND_TARGET, BUILD_TARGET, 'manifest.json')
     await writeFileAsync(manifestTarget, JSON.stringify(manifest, null, 4))
 })
 

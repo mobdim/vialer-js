@@ -162,7 +162,7 @@ class App extends Skeleton {
     */
     _init() {
         this.settings = {
-            analyticsId: 'UA-60726618-9',
+            analyticsId: process.env.ANALYTICS_ID,
             c2d: 'true',
             platformUrl: this.getPlatformUrl(),
             realm: this.getWebsocketUrl(),
