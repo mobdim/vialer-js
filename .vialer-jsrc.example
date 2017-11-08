@@ -7,19 +7,18 @@
             "name": "Vialer",
             "analytics_id": "UA-60726618-9",
             "colors": {
-                "vg-primary-color": "#3c3c50",
-                "vg-info-color-failed-dark": " #d9534f",
-                "vg-info-color-failed-light": "lighten($vg-info-color-failed-dark, 30%)",
-                "vg-info-color-failed-lighter": "lighten($vg-info-color-failed-dark, 40%)",
-                "vg-info-color-info-dark": "#31708f",
-                "vg-info-color-info-light": "lighten($vg-info-color-info-dark, 30%)",
-                "vg-info-color-info-lighter": "lighten($vg-info-color-info-dark, 40%)",
-                "vg-info-color-success-dark": "#5cb85c",
-                "vg-info-color-success-light": "lighten($vg-info-color-success-dark, 30%)",
-                "vg-info-color-success-lighter": "lighten($vg-info-color-success-dark, 40%)",
-                "vg-grey-lightest": "#fbfbfb",
+                "vg-button-failed-text-color": "#d9534f",
+                "vg-button-failed-background-color": "lighten($vg-button-failed-text-color, 40%)",
+                "vg-button-failed-border-color": "lighten($vg-button-failed-text-color, 30%)",
+                "vg-button-info-text-color": "#31708f",
+                "vg-button-info-background-color": "lighten($vg-button-info-text-color, 40%)",
+                "vg-button-info-border-color": "lighten($vg-button-info-text-color, 30%)",
+                "vg-grey-light": "#999",
                 "vg-grey-lighter": "#e5e5e5",
-                "vg-grey-light": "#999"
+                "vg-grey-lightest": "#fbfbfb",
+                "vg-primary-color": "#3c3c50",
+                "vg-state-available-color": "#5cb85c",
+                "vg-state-busy-color": "#d9534f"
             },
             "store": {
                 "firefox": {

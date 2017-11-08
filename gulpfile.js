@@ -45,7 +45,7 @@ const PACKAGE = require('./package')
 const writeFileAsync = promisify(fs.writeFile)
 
 const BUILD_DIR = process.env.BUILD_DIR || path.join(__dirname, 'build')
-const BUILD_TARGET = argv.target ? argv.target : 'chrome'
+let BUILD_TARGET = argv.target ? argv.target : 'chrome'
 const BUILD_TARGETS = ['chrome', 'firefox', 'electron']
 const DISTRIBUTION_NAME = `${PACKAGE.name.toLowerCase()}-${PACKAGE.version}.zip`
 const GULPACTION = argv._[0]
@@ -68,7 +68,7 @@ rc('vialer-js', VIALER_SETTINGS)
 VIALER_SETTINGS.audience = argv.audience ? argv.audience : 'trustedTesters'
 
 // Specify the brand target or fallback to `vialer` as default.
-const BRAND_TARGET = argv.brand ? argv.brand : 'vialer'
+let BRAND_TARGET = argv.brand ? argv.brand : 'vialer'
 
 // Some additional variable processing.
 // Verify that the build target is valid.
@@ -79,6 +79,17 @@ if (!BUILD_TARGETS.includes(BUILD_TARGET)) {
 }
 gutil.log(`Build target: ${BUILD_TARGET}`)
 gutil.log(`Brand target: ${BRAND_TARGET}`)
+
+// Simple brand validation check.
+
+for (let brand in VIALER_SETTINGS.brands) {
+    try {
+        fs.statSync(`./src/brand/${brand}`)
+    } catch (err) {
+        gutil.log(`(!) Brand directory is missing for brand "${brand}"`)
+        process.exit(0)
+    }
+}
 
 // Force production mode when running certain tasks from
 // the commandline. Use this with care.
@@ -217,13 +228,35 @@ gulp.task('assets', 'Copy assets to the build directory.', ['fonts'], () => {
 })
 
 
-gulp.task('build', 'Clean existing build and regenerate a new one.', (done) => {
+gulp.task('build', 'Make a development build. Build options can be used on most other tasks as well.', (done) => {
     // Refresh the brand content with each build.
     let targetTasks
     if (BUILD_TARGET === 'electron') targetTasks = ['js-electron-main', 'js-electron-webview', 'js-vendor']
     else targetTasks = ['js-vendor', 'js-webext']
 
     runSequence(['assets', 'html', 'scss'].concat(targetTasks), done)
+}, {
+    options: {
+        'brand=vialer': 'Use a brand config from .vialer-jsrc brands. Defaults to "vialer".',
+        'target=chrome|firefox|electron': 'Target a specific environment for the build.',
+    },
+})
+
+
+gulp.task('build-all-targets', 'Build all targets.', (done) => {
+    // Refresh the brand content with each build.
+    let electronTargetTasks = ['assets', 'html', 'scss', 'js-electron-main', 'js-electron-webview', 'js-vendor']
+    let pluginTargetTasks = ['assets', 'html', 'scss', 'js-vendor', 'js-webext']
+    BUILD_TARGET = 'chrome'
+    runSequence(pluginTargetTasks, () => {
+        BUILD_TARGET = 'firefox'
+        runSequence(pluginTargetTasks, () => {
+            BUILD_TARGET = 'electron'
+            runSequence(electronTargetTasks, () => {
+                done()
+            })
+        })
+    })
 })
 
 
