@@ -1,6 +1,4 @@
-# Deployment process
-
-## Preparation
+# Preparation
 Deployment to the Firefox and Chrome store is (semi) automated. In order to deploy
 to either one, you first need to fill in API credentials in the following file:
 
@@ -23,7 +21,7 @@ To be able to push to npm, an authorized developer first have to login to the
 npm login
 ```
 
-## Public release
+# Public release
 1. Update the `CHANGELOG.md` with all the changes since the last version
 
 2. Bump the version:

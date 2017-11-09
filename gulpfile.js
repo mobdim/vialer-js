@@ -46,8 +46,8 @@ const writeFileAsync = promisify(fs.writeFile)
 
 const BUILD_DIR = process.env.BUILD_DIR || path.join(__dirname, 'build')
 let BUILD_TARGET = argv.target ? argv.target : 'chrome'
-const BUILD_TARGETS = ['chrome', 'firefox', 'electron']
-const DISTRIBUTION_NAME = `${PACKAGE.name.toLowerCase()}-${PACKAGE.version}.zip`
+const BUILD_TARGETS = ['chrome', 'firefox', 'electron', 'webview']
+
 const GULPACTION = argv._[0]
 
 const NODE_PATH = path.join(__dirname, 'node_modules') || process.env.NODE_PATH
@@ -80,8 +80,13 @@ if (!BUILD_TARGETS.includes(BUILD_TARGET)) {
 gutil.log(`Build target: ${BUILD_TARGET}`)
 gutil.log(`Brand target: ${BRAND_TARGET}`)
 
-// Simple brand validation check.
+const DISTRIBUTION_NAME = `${BRAND_TARGET}-${PACKAGE.version}.zip`
 
+// Simple brand validation check.
+if (!VIALER_SETTINGS.brands[BRAND_TARGET]) {
+    gutil.log(`(!) Brand ${BRAND_TARGET} does not exist. Check vialer-jsrc.`)
+    process.exit(0)
+}
 for (let brand in VIALER_SETTINGS.brands) {
     try {
         fs.statSync(`./src/brand/${brand}`)
@@ -125,6 +130,21 @@ let sizeOptions = {
 */
 function formatScssVars(brandProperties) {
     return Object.keys(brandProperties).map((name) => '$' + name + ': ' + brandProperties[name] + ';').join('\n')
+}
+
+
+/**
+* Fire up a development server that serves docs
+* and the build directory.
+*/
+function startDevServer() {
+    gutil.log('Starting development server. Hit Ctrl-c to quit.')
+    const app = connect()
+    livereload.listen({silent: false})
+    app.use(serveStatic(path.join(__dirname, 'build')))
+    app.use('/', serveIndex(path.join(__dirname, 'build'), {icons: false}))
+    app.use(mount('/docs', serveStatic(path.join(__dirname, 'docs', 'build'))))
+    http.createServer(app).listen(8999)
 }
 
 
@@ -231,21 +251,22 @@ gulp.task('assets', 'Copy assets to the build directory.', ['fonts'], () => {
 gulp.task('build', 'Make a development build. Build options can be used on most other tasks as well.', (done) => {
     // Refresh the brand content with each build.
     let targetTasks
-    if (BUILD_TARGET === 'electron') targetTasks = ['js-electron-main', 'js-electron-webview', 'js-vendor']
+    if (BUILD_TARGET === 'electron') targetTasks = ['js-electron-main', 'js-webview', 'js-vendor']
+    else if (BUILD_TARGET === 'webview') targetTasks = ['js-webview', 'js-vendor']
     else targetTasks = ['js-vendor', 'js-webext']
 
     runSequence(['assets', 'html', 'scss'].concat(targetTasks), done)
 }, {
     options: {
         'brand=vialer': 'Use a brand config from .vialer-jsrc brands. Defaults to "vialer".',
-        'target=chrome|firefox|electron': 'Target a specific environment for the build.',
+        'target=chrome|firefox|electron|webview': 'Target a specific environment for the build.',
     },
 })
 
 
 gulp.task('build-all-targets', 'Build all targets.', (done) => {
     // Refresh the brand content with each build.
-    let electronTargetTasks = ['assets', 'html', 'scss', 'js-electron-main', 'js-electron-webview', 'js-vendor']
+    let electronTargetTasks = ['assets', 'html', 'scss', 'js-electron-main', 'js-webview', 'js-vendor']
     let pluginTargetTasks = ['assets', 'html', 'scss', 'js-vendor', 'js-webext']
     BUILD_TARGET = 'chrome'
     runSequence(pluginTargetTasks, () => {
@@ -266,7 +287,7 @@ gulp.task('build-dist', 'Make a build and generate a web-extension zip file.', (
         // the deployable version as closely as possible.
         if (BUILD_TARGET === 'firefox') {
             // eslint-disable-next-line max-len
-            let execCommand = `web-ext build --overwrite-dest --source-dir ./build/${BRAND_TARGET}/${BUILD_TARGET} --artifacts-dir ./dist/${BUILD_TARGET}/`
+            let execCommand = `web-ext build --overwrite-dest --source-dir ./build/${BRAND_TARGET}/${BUILD_TARGET} --artifacts-dir ./dist/${BRAND_TARGET}/${BUILD_TARGET}/`
             let child = childExec(execCommand, undefined, (err, stdout, stderr) => {
                 if (stderr) gutil.log(stderr)
                 if (stdout) gutil.log(stdout)
@@ -394,10 +415,10 @@ gulp.task('fonts', 'Copy fonts to the build directory.', () => {
 gulp.task('html', 'Add html to the build directory.', () => {
     let jsbottom, jshead, target
 
-    if (BUILD_TARGET === 'electron') {
+    if (['electron', 'webview'].includes(BUILD_TARGET)) {
         target = 'electron'
         jshead = '<script src="js/lib/thirdparty/SIPml-api.js"></script>'
-        jsbottom = '<script src="js/electron_webview.js"></script>'
+        jsbottom = '<script src="js/webview.js"></script>'
 
     } else {
         target = 'webext'
@@ -405,13 +426,12 @@ gulp.task('html', 'Add html to the build directory.', () => {
         jsbottom = '<script src="js/webext_popup.js"></script>'
     }
 
-    // The webext_popup.html file is shared with the electron build target.
+    // The index.html file is shared with the electron build target.
     // Appropriate scripts are inserted based on the build target.
-    return gulp.src(path.join('src', 'html', 'webext_popup.html'))
+    return gulp.src(path.join('src', 'html', 'index.html'))
         .pipe(replace('<!--JSBOTTOM-->', jsbottom))
         .pipe(replace('<!--JSHEAD-->', jshead))
         .pipe(flatten())
-        .pipe(ifElse((target === 'electron'), () => rename('electron_webview.html')))
         .pipe(ifElse((target === 'webext'), () => addsrc(path.join('src', 'html', 'webext_{options,callstatus}.html'))))
         .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
         .pipe(ifElse(isWatching, livereload))
@@ -421,21 +441,21 @@ gulp.task('html', 'Add html to the build directory.', () => {
 gulp.task('js-electron', 'Generate electron js.', (done) => {
     runSequence([
         'js-electron-main',
-        'js-electron-webview',
+        'js-webview',
         'js-vendor',
     ], done)
 })
 
 
-gulp.task('js-electron-main', 'Generate electron main thread js.', ['js-electron-webview'], () => {
-    return gulp.src('./src/js/electron_main.js', {base: './src/js/'})
+gulp.task('js-electron-main', 'Generate electron main thread js.', ['js-webview'], () => {
+    return gulp.src('./src/js/main.js', {base: './src/js/'})
         .pipe(ifElse(PRODUCTION, () => minifier()))
         .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
         .pipe(size(_extend({title: 'electron-main'}, sizeOptions)))
         .pipe(ifElse(isWatching, livereload))
 })
 
-gulp.task('js-electron-webview', 'Generate electron webview js.', jsEntry('electron_webview'))
+gulp.task('js-webview', 'Generate webview js.', jsEntry('webview'))
 gulp.task('js-vendor', 'Generate third-party vendor js.', jsEntry('vendor'))
 gulp.task('js-webext', 'Generate webextension js.', [], (done) => {
     runSequence([
@@ -470,7 +490,7 @@ gulp.task('manifest-webext-firefox', 'Generate a web-extension manifest for Fire
     let manifest = getManifest()
     manifest.options_ui.browser_style = true
     manifest.applications = {
-        gecko: VIALER_SETTINGS.firefox.gecko,
+        gecko: VIALER_SETTINGS.brands[BRAND_TARGET].store.firefox.gecko,
     }
     const manifestTarget = path.join(__dirname, 'build', BRAND_TARGET, BUILD_TARGET, 'manifest.json')
     await writeFileAsync(manifestTarget, JSON.stringify(manifest, null, 4))
@@ -498,14 +518,25 @@ gulp.task('scss-webext-options', 'Generate webextension options css.', scssEntry
 gulp.task('scss-webext-print', 'Generate webextension print css.', scssEntry('webext_print'))
 
 
+gulp.task('test-build', 'Make a development build and run it in the target environment.', () => {
+    let command = `gulp build --target ${BUILD_TARGET}`
+    const buildDir = `./build/${BRAND_TARGET}/${BUILD_TARGET}`
+    if (BUILD_TARGET === 'chrome') command = `${command};chromium --user-data-dir=/tmp/vialer-js --load-extension=${buildDir} --no-first-run`
+    else if (BUILD_TARGET === 'firefox') command = `${command};web-ext run --no-reload --source-dir ${buildDir}`
+    else if (BUILD_TARGET === 'electron') {
+        command = `${command};electron --js-flags='--harmony-async-await' ${buildDir}/main.js`
+    } else if (BUILD_TARGET === 'webview') {
+        startDevServer()
+        command = `${command};chromium --user-data-dir=/tmp/vialer-js --disable-web-security --new-window http://localhost:8999/${BRAND_TARGET}/webview/index.html`
+    }
+    childExec(command, undefined, (err, stdout, stderr) => {
+        if (err) gutil.log(err)
+    })
+})
+
 gulp.task('watch', 'Start development server and watch for changes.', () => {
-    const app = connect()
     isWatching = true
-    livereload.listen({silent: false})
-    app.use(serveStatic(path.join(__dirname, 'build')))
-    app.use('/', serveIndex(path.join(__dirname, 'build'), {icons: false}))
-    app.use(mount('/docs', serveStatic(path.join(__dirname, 'docs', 'build'))))
-    http.createServer(app).listen(8999)
+    startDevServer()
 
     // Watch files related to working on the documentation.
     if (WITHDOCS) {
@@ -524,8 +555,8 @@ gulp.task('watch', 'Start development server and watch for changes.', () => {
         path.join(__dirname, 'src', 'js', '**', '*.js'),
         `!${path.join(__dirname, 'src', 'js', 'lib', 'thirdparty', '**', '*.js')}`,
         `!${path.join(__dirname, 'src', 'js', 'vendor.js')}`,
-        `!${path.join(__dirname, 'src', 'js', 'electron_main.js')}`,
-        `!${path.join(__dirname, 'src', 'js', 'electron_webview.js')}`,
+        `!${path.join(__dirname, 'src', 'js', 'main.js')}`,
+        `!${path.join(__dirname, 'src', 'js', 'webview.js')}`,
     ], () => {
         if (BUILD_TARGET === 'electron') gulp.start('js-electron')
         else gulp.start('js-webext')
@@ -535,7 +566,7 @@ gulp.task('watch', 'Start development server and watch for changes.', () => {
 
     gulp.watch(path.join(__dirname, 'src', 'js', 'vendor.js'), ['js-vendor'])
 
-    if (BUILD_TARGET !== 'electron') {
+    if (!['electron', 'webview'].includes(BUILD_TARGET)) {
         gulp.watch(path.join(__dirname, 'src', 'manifest.json'), [`manifest-webext-${BUILD_TARGET}`])
         gulp.watch(path.join(__dirname, 'src', 'brand.json'), ['build'])
     }

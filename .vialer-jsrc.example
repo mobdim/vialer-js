@@ -5,7 +5,7 @@
             "sip_endpoint": "websocket.voipgrid.nl",
             "homepage_url": "https://wiki.voipgrid.nl/index.php/Browser_Plugins",
             "name": "Vialer",
-            "analytics_id": "UA-60726618-9",
+            "analytics_id": "",
             "colors": {
                 "vg-button-failed-text-color": "#d9534f",
                 "vg-button-failed-background-color": "lighten($vg-button-failed-text-color, 40%)",
@@ -23,7 +23,7 @@
             "store": {
                 "firefox": {
                     "gecko": {
-                        "id": "voipgrid@jetpack",
+                        "id": "",
                          "strict_min_version": "50.0"
                     },
                     "apiKey": "",
