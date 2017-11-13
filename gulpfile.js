@@ -28,7 +28,6 @@ const minifier = composer(require('uglify-es'), console)
 const mount = require('connect-mount')
 
 const notify = require('gulp-notify')
-const rename = require('gulp-rename')
 const replace = require('gulp-replace')
 const rc = require('rc')
 const runSequence = require('run-sequence')
@@ -44,45 +43,59 @@ const zip = require('gulp-zip')
 const PACKAGE = require('./package')
 const writeFileAsync = promisify(fs.writeFile)
 
-const BUILD_DIR = process.env.BUILD_DIR || path.join(__dirname, 'build')
-let BUILD_TARGET = argv.target ? argv.target : 'chrome'
-const BUILD_TARGETS = ['chrome', 'firefox', 'electron', 'webview']
 
-const GULPACTION = argv._[0]
-
-const NODE_PATH = path.join(__dirname, 'node_modules') || process.env.NODE_PATH
-const SRC_DIR = path.join(__dirname, 'src')
-const WATCHLINKED = argv.linked ? argv.linked : false
-const WITHDOCS = argv.docs ? argv.docs : false
-
-let PRODUCTION
-let NODE_ENV
-
-// Switches extra applicationverbosity on/off.
-let VERBOSE = false
-if ((process.env.VERBOSE === 'true') || (process.env.VERBOSE === '1')) VERBOSE = true
-
-// Loads the json API settings from ~/.vialer-jsrc.
-let VIALER_SETTINGS = {}
-rc('vialer-js', VIALER_SETTINGS)
-VIALER_SETTINGS.audience = argv.audience ? argv.audience : 'trustedTesters'
+// STARTOF: Build flags definition.
 
 // Specify the brand target or fallback to `vialer` as default.
 let BRAND_TARGET = argv.brand ? argv.brand : 'vialer'
-
+const BUILD_DIR = process.env.BUILD_DIR || path.join(__dirname, 'build')
+let BUILD_TARGET = argv.target ? argv.target : 'chrome'
+const BUILD_TARGETS = ['chrome', 'firefox', 'electron', 'webview']
 // Some additional variable processing.
 // Verify that the build target is valid.
 if (!BUILD_TARGETS.includes(BUILD_TARGET)) {
     gutil.log(`Invalid build target: ${BUILD_TARGET}`)
-    // eslint-disable-next-line no-process-exit
-    process.exit()
+    process.exit(0)
 }
-gutil.log(`Build target: ${BUILD_TARGET}`)
-gutil.log(`Brand target: ${BRAND_TARGET}`)
 
-const DISTRIBUTION_NAME = `${BRAND_TARGET}-${PACKAGE.version}.zip`
+// Browserify instance caching.
+let BUNDLERS = {bg: null, callstatus: null, popup: null, tab: null}
+const DEPLOY_TARGET = argv.deploy ? argv.deploy : 'beta'
+if (!['production', 'beta'].includes(DEPLOY_TARGET)) {
+    gutil.log(`Invalid deployment target: '${DEPLOY_TARGET}'`)
+    process.exit(0)
+}
 
-// Simple brand validation check.
+let DISTRIBUTION_NAME
+if (DEPLOY_TARGET === 'test') DISTRIBUTION_NAME = `${BRAND_TARGET}-${PACKAGE.version}-beta.zip`
+else DISTRIBUTION_NAME = `${BRAND_TARGET}-${PACKAGE.version}.zip`
+
+// Flag that enables livereload triggers from tasks. Set from watch task.
+let LIVERELOAD = false
+// Mainly used to eliminate dead code with using envify.
+let NODE_ENV
+const NODE_PATH = path.join(__dirname, 'node_modules') || process.env.NODE_PATH
+// Indicates whether to make an optimized or unoptimized build.
+let PRODUCTION
+// Force production mode when running certain tasks from
+// the commandline. Use this with care.
+if (['deploy', 'build-dist'].includes(argv._[0])) {
+    PRODUCTION = true
+    process.env.NODE_ENV = 'production'
+} else PRODUCTION = argv.production ? argv.production : (process.env.NODE_ENV === 'production')
+NODE_ENV = process.env.NODE_ENV || 'development'
+
+// Settings for showing task output filesize.
+const SIZE_OPTIONS = {showFiles: true, showTotal: true}
+const SRC_DIR = path.join(__dirname, 'src')
+// Switches extra application verbosity on/off.
+let VERBOSE = false
+if ((process.env.VERBOSE === 'true') || (process.env.VERBOSE === '1')) VERBOSE = true
+// Loads the json API settings from ~/.vialer-jsrc.
+let VIALER_SETTINGS = {}
+rc('vialer-js', VIALER_SETTINGS)
+// VIALER_SETTINGS.deploy_target = argv.audience ? argv.audience : 'trustedTesters'
+// Simple brand validation checks.
 if (!VIALER_SETTINGS.brands[BRAND_TARGET]) {
     gutil.log(`(!) Brand ${BRAND_TARGET} does not exist. Check vialer-jsrc.`)
     process.exit(0)
@@ -95,32 +108,16 @@ for (let brand in VIALER_SETTINGS.brands) {
         process.exit(0)
     }
 }
+const WATCHLINKED = argv.linked ? argv.linked : false
+const WITHDOCS = argv.docs ? argv.docs : false
 
-// Force production mode when running certain tasks from
-// the commandline. Use this with care.
-if (['deploy', 'build-dist'].includes(GULPACTION)) {
-    PRODUCTION = true
-    process.env.NODE_ENV = 'production'
-} else {
-    PRODUCTION = argv.production ? argv.production : (process.env.NODE_ENV === 'production')
-}
-
-NODE_ENV = process.env.NODE_ENV || 'development'
-
-// Notify developer about some essential build presets.
-if (PRODUCTION) gutil.log(`Production mode: ${PRODUCTION}`)
-
-let bundlers = {
-    bg: null,
-    callstatus: null,
-    popup: null,
-    tab: null,
-}
-let isWatching
-let sizeOptions = {
-    showFiles: true,
-    showTotal: true,
-}
+// Notify developer about some essential build flag values.
+gutil.log('BUILD FLAGS:')
+gutil.log(`- TARGET: ${BUILD_TARGET}`)
+gutil.log(`- BRAND: ${BRAND_TARGET}`)
+gutil.log(`- DEPLOY: ${DEPLOY_TARGET}`)
+gutil.log(`- PRODUCTION: ${PRODUCTION}`)
+// ENDOF: Build flags definition.
 
 
 /**
@@ -159,6 +156,26 @@ const getManifest = () => {
     // The 16x16px icon is used for the context menu.
     // It is different from the logo.
     manifest.name = VIALER_SETTINGS.brands[BRAND_TARGET].name
+    // Distinguish between the test-version and production
+    // by adding a `beta` postfix.
+    if (DEPLOY_TARGET === 'beta') manifest.name = `${manifest.name}-beta`
+
+    if (BUILD_TARGET === 'chrome') {
+        manifest.options_ui.chrome_style = false
+    } else if (BUILD_TARGET === 'firefox') {
+        // The id_test property should not end up in the manifest.
+        let testId = VIALER_SETTINGS.brands[BRAND_TARGET].store.firefox.gecko.id_test
+        delete VIALER_SETTINGS.brands[BRAND_TARGET].store.firefox.gecko.id_test
+
+        manifest.options_ui.browser_style = true
+        manifest.applications = {
+            gecko: VIALER_SETTINGS.brands[BRAND_TARGET].store.firefox.gecko,
+        }
+        // The deploy target for Firefox is specified in the manifest,
+        // instead of being passed with the API call to the store.
+        if (DEPLOY_TARGET === 'beta') manifest.applications.gecko.id = testId
+    }
+
     manifest.browser_action.default_title = VIALER_SETTINGS.brands[BRAND_TARGET].name
     manifest.permissions.push(VIALER_SETTINGS.brands[BRAND_TARGET].permissions)
     manifest.homepage_url = VIALER_SETTINGS.brands[BRAND_TARGET].homepage_url
@@ -174,17 +191,17 @@ const getManifest = () => {
 */
 const jsEntry = (name) => {
     return (done) => {
-        if (!bundlers[name]) {
-            bundlers[name] = browserify({
+        if (!BUNDLERS[name]) {
+            BUNDLERS[name] = browserify({
                 cache: {},
                 debug: !PRODUCTION,
                 entries: path.join(__dirname, 'src', 'js', `${name}.js`),
                 packageCache: {},
             })
-            if (isWatching) bundlers[name].plugin(watchify)
+            if (LIVERELOAD) BUNDLERS[name].plugin(watchify)
         }
-        bundlers[name].ignore('process')
-        bundlers[name].bundle()
+        BUNDLERS[name].ignore('process')
+        BUNDLERS[name].bundle()
             .on('error', notify.onError('Error: <%= error.message %>'))
             .on('end', () => {
                 done()
@@ -205,7 +222,7 @@ const jsEntry = (name) => {
 
             .pipe(ifElse(!PRODUCTION, () => sourcemaps.write('./')))
             .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}/js`))
-            .pipe(size(_extend({title: `${name}.js`}, sizeOptions)))
+            .pipe(size(_extend({title: `${name}.js`}, SIZE_OPTIONS)))
     }
 }
 
@@ -230,25 +247,29 @@ const scssEntry = (name) => {
             .pipe(concat(`${name}.css`))
             .pipe(ifElse(PRODUCTION, () => cleanCSS({advanced: true, level: 2})))
             .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}/css`))
-            .pipe(size(_extend({title: `scss-${name}`}, sizeOptions)))
+            .pipe(size(_extend({title: `scss-${name}`}, SIZE_OPTIONS)))
     }
 }
 
 
-gulp.task('assets', 'Copy assets to the build directory.', ['fonts'], () => {
-    return gulp.src(`./src/brand/${BRAND_TARGET}/img/{*.png,*.jpg}`, {base: `./src/brand/${BRAND_TARGET}/`})
+gulp.task('assets', 'Copy (branded) assets to the build directory.', () => {
+    const robotoPath = path.join(NODE_PATH, 'roboto-fontface', 'fonts', 'roboto')
+    return gulp.src(path.join(robotoPath, '{Roboto-Light.woff2,Roboto-Regular.woff2,Roboto-Medium.woff2}'))
+        .pipe(addsrc(path.join(SRC_DIR, 'fonts', '*'), {base: SRC_DIR}))
+        .pipe(flatten({newPath: './fonts'}))
+        .pipe(addsrc(`./src/brand/${BRAND_TARGET}/img/{*.png,*.jpg}`, {base: `./src/brand/${BRAND_TARGET}/`}))
         .pipe(ifElse(PRODUCTION, imagemin))
         .pipe(addsrc('./LICENSE'))
         .pipe(addsrc('./README.md'))
         .pipe(addsrc('./src/_locales/**', {base: './src/'}))
         .pipe(addsrc('./src/js/lib/thirdparty/**/*.js', {base: './src/'}))
         .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
-        .pipe(size(_extend({title: 'assets'}, sizeOptions)))
-        .pipe(ifElse(isWatching, livereload))
+        .pipe(size(_extend({title: 'assets'}, SIZE_OPTIONS)))
+        .pipe(ifElse(LIVERELOAD, livereload))
 })
 
 
-gulp.task('build', 'Make a development build. Build options can be used on most other tasks as well.', (done) => {
+gulp.task('build', 'Make a branded unoptimized development build.', (done) => {
     // Refresh the brand content with each build.
     let targetTasks
     if (BUILD_TARGET === 'electron') targetTasks = ['js-electron-main', 'js-webview', 'js-vendor']
@@ -281,7 +302,13 @@ gulp.task('build-all-targets', 'Build all targets.', (done) => {
 })
 
 
-gulp.task('build-dist', 'Make a build and generate a web-extension zip file.', (done) => {
+gulp.task('build-clean', `Clear a branded build directory; e.g. ${path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET)}`, async() => {
+    await del([path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET, '**')], {force: true})
+    mkdirp(path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET))
+})
+
+
+gulp.task('build-dist', 'Make an optimized build and generate a WebExtension zip file from it.', (done) => {
     runSequence('build', async function() {
         // Use the web-ext build method here, so the result will match
         // the deployable version as closely as possible.
@@ -307,32 +334,39 @@ gulp.task('build-dist', 'Make a build and generate a web-extension zip file.', (
 })
 
 
-gulp.task('build-clean', `Clean build directory ${path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET)}`, async() => {
-    await del([path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET, '**')], {force: true})
-    mkdirp(path.join(BUILD_DIR, BRAND_TARGET, BUILD_TARGET))
+gulp.task('build-run', 'Make a development build and run it in the target environment.', () => {
+    let command = `gulp build --target ${BUILD_TARGET} --brand ${BRAND_TARGET}`
+    const buildDir = `./build/${BRAND_TARGET}/${BUILD_TARGET}`
+    if (BUILD_TARGET === 'chrome') command = `${command};chromium --user-data-dir=/tmp/vialer-js --load-extension=${buildDir} --no-first-run`
+    else if (BUILD_TARGET === 'firefox') command = `${command};web-ext run --no-reload --source-dir ${buildDir}`
+    else if (BUILD_TARGET === 'electron') {
+        command = `${command};electron --js-flags='--harmony-async-await' ${buildDir}/main.js`
+    } else if (BUILD_TARGET === 'webview') {
+        startDevServer()
+        const urlTarget = `http://localhost:8999/${BRAND_TARGET}/webview/index.html`
+        command = `${command};chromium --user-data-dir=/tmp/vialer-js --disable-web-security --new-window ${urlTarget}`
+    }
+    childExec(command, undefined, (err, stdout, stderr) => {
+        if (err) gutil.log(err)
+    })
 })
 
 
-gulp.task('deploy', (done) => {
+gulp.task('deploy', `Deploy the build target to the ${BUILD_TARGET} store.`, (done) => {
     if (BUILD_TARGET === 'chrome') {
         runSequence('build-dist', async function() {
-            const api = VIALER_SETTINGS[BRAND_TARGET].store.chrome
+            const api = VIALER_SETTINGS.brands[BRAND_TARGET].store.chrome
             const zipFile = fs.createReadStream(`./dist/${BRAND_TARGET}/${BUILD_TARGET}/${DISTRIBUTION_NAME}`)
 
-            let targetExtension
-
-            // Deploy to production environment.
-            if (VIALER_SETTINGS.audience === 'default') {
-                targetExtension = api.extensionId
-            } else {
-                // Deploy to test extension.
-                targetExtension = api.extensionId_test
-            }
+            let extensionId
+            // Deploy to production or test environment, based on DEPLOY_TARGET.
+            if (DEPLOY_TARGET === 'production') extensionId = api.extensionId
+            else if (DEPLOY_TARGET === 'beta') extensionId = api.extensionId_test
 
             const webStore = require('chrome-webstore-upload')({
                 clientId: api.clientId,
                 clientSecret: api.clientSecret,
-                extensionId: targetExtension,
+                extensionId: extensionId,
                 refreshToken: api.refreshToken,
             })
 
@@ -362,11 +396,12 @@ gulp.task('deploy', (done) => {
             }
         })
     } else if (BUILD_TARGET === 'firefox') {
+        // The extension target is defined in the manifest.
         runSequence('build', function() {
             // A Firefox extension version number can only be signed and
             // uploaded once using web-ext. The second time will fail with an
             // unobvious reason.
-            const api = VIALER_SETTINGS[BRAND_TARGET].store.firefox
+            const api = VIALER_SETTINGS.brands[BRAND_TARGET].store.firefox
             // eslint-disable-next-line max-len
             let _cmd = `web-ext sign --source-dir ./build/${BRAND_TARGET}/${BUILD_TARGET} --api-key ${api.apiKey} --api-secret ${api.apiSecret} --artifacts-dir ./build/${BRAND_TARGET}/${BUILD_TARGET}`
             let child = childExec(_cmd, undefined, (err, stdout, stderr) => {
@@ -388,7 +423,7 @@ gulp.task('docs', 'Generate documentation.', (done) => {
     childExec(execCommand, undefined, (err, stdout, stderr) => {
         if (stderr) gutil.log(stderr)
         if (stdout) gutil.log(stdout)
-        if (isWatching) livereload.changed('rtd.js')
+        if (LIVERELOAD) livereload.changed('rtd.js')
         done()
     })
 })
@@ -399,20 +434,7 @@ gulp.task('docs-deploy', 'Push the docs build directory to github pages.', ['doc
 })
 
 
-gulp.task('fonts', 'Copy fonts to the build directory.', () => {
-    const robotoBasePath = path.join(NODE_PATH, 'roboto-fontface', 'fonts', 'roboto')
-
-    return gulp.src(path.join(SRC_DIR, 'fonts', '*'))
-        .pipe(addsrc(path.join(robotoBasePath, 'Roboto-Light.woff2')))
-        .pipe(addsrc(path.join(robotoBasePath, 'Roboto-Regular.woff2')))
-        .pipe(addsrc(path.join(robotoBasePath, 'Roboto-Medium.woff2')))
-        .pipe(flatten())
-        .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}/fonts`))
-        .pipe(size(_extend({title: 'fonts'}, sizeOptions)))
-})
-
-
-gulp.task('html', 'Add html to the build directory.', () => {
+gulp.task('html', 'Preprocess and build application HTML.', () => {
     let jsbottom, jshead, target
 
     if (['electron', 'webview'].includes(BUILD_TARGET)) {
@@ -434,7 +456,7 @@ gulp.task('html', 'Add html to the build directory.', () => {
         .pipe(flatten())
         .pipe(ifElse((target === 'webext'), () => addsrc(path.join('src', 'html', 'webext_{options,callstatus}.html'))))
         .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
-        .pipe(ifElse(isWatching, livereload))
+        .pipe(ifElse(LIVERELOAD, livereload))
 })
 
 
@@ -451,8 +473,8 @@ gulp.task('js-electron-main', 'Generate electron main thread js.', ['js-webview'
     return gulp.src('./src/js/main.js', {base: './src/js/'})
         .pipe(ifElse(PRODUCTION, () => minifier()))
         .pipe(gulp.dest(`./build/${BRAND_TARGET}/${BUILD_TARGET}`))
-        .pipe(size(_extend({title: 'electron-main'}, sizeOptions)))
-        .pipe(ifElse(isWatching, livereload))
+        .pipe(size(_extend({title: 'electron-main'}, SIZE_OPTIONS)))
+        .pipe(ifElse(LIVERELOAD, livereload))
 })
 
 gulp.task('js-webview', 'Generate webview js.', jsEntry('webview'))
@@ -465,8 +487,8 @@ gulp.task('js-webext', 'Generate webextension js.', [], (done) => {
         'js-webext-options',
         'js-webext-popup',
         'js-webext-tab',
-    ], `manifest-webext-${BUILD_TARGET}`, () => {
-        if (isWatching) livereload.changed('web.js')
+    ], 'manifest-webext', () => {
+        if (LIVERELOAD) livereload.changed('web.js')
         done()
     })
 })
@@ -478,21 +500,10 @@ gulp.task('js-webext-popup', 'Generate webextension popup/popout js.', jsEntry('
 gulp.task('js-webext-tab', 'Generate webextension tab js.', jsEntry('webext_tab'))
 
 
-gulp.task('manifest-webext-chrome', 'Generate a web-extension manifest for Chrome.', async() => {
+gulp.task('manifest-webext', 'Generate a manifest for a browser WebExtension.', async() => {
     let manifest = getManifest()
-    manifest.options_ui.chrome_style = false
     const manifestTarget = path.join(__dirname, 'build', BRAND_TARGET, BUILD_TARGET, 'manifest.json')
-    await writeFileAsync(manifestTarget, JSON.stringify(manifest, null, 4))
-})
 
-
-gulp.task('manifest-webext-firefox', 'Generate a web-extension manifest for Firefox.', async() => {
-    let manifest = getManifest()
-    manifest.options_ui.browser_style = true
-    manifest.applications = {
-        gecko: VIALER_SETTINGS.brands[BRAND_TARGET].store.firefox.gecko,
-    }
-    const manifestTarget = path.join(__dirname, 'build', BRAND_TARGET, BUILD_TARGET, 'manifest.json')
     await writeFileAsync(manifestTarget, JSON.stringify(manifest, null, 4))
 })
 
@@ -506,7 +517,7 @@ gulp.task('scss', 'Compile all css.', [], (done) => {
     ], () => {
         // Targetting webext.css for livereload changed only works in the
         // webview. In the callstatus html, it will trigger a page reload.
-        if (isWatching) livereload.changed('webext.css')
+        if (LIVERELOAD) livereload.changed('webext.css')
         done()
     })
 })
@@ -517,25 +528,8 @@ gulp.task('scss-webext-callstatus', 'Generate webextension callstatus dialog css
 gulp.task('scss-webext-options', 'Generate webextension options css.', scssEntry('webext_options'))
 gulp.task('scss-webext-print', 'Generate webextension print css.', scssEntry('webext_print'))
 
-
-gulp.task('test-build', 'Make a development build and run it in the target environment.', () => {
-    let command = `gulp build --target ${BUILD_TARGET}`
-    const buildDir = `./build/${BRAND_TARGET}/${BUILD_TARGET}`
-    if (BUILD_TARGET === 'chrome') command = `${command};chromium --user-data-dir=/tmp/vialer-js --load-extension=${buildDir} --no-first-run`
-    else if (BUILD_TARGET === 'firefox') command = `${command};web-ext run --no-reload --source-dir ${buildDir}`
-    else if (BUILD_TARGET === 'electron') {
-        command = `${command};electron --js-flags='--harmony-async-await' ${buildDir}/main.js`
-    } else if (BUILD_TARGET === 'webview') {
-        startDevServer()
-        command = `${command};chromium --user-data-dir=/tmp/vialer-js --disable-web-security --new-window http://localhost:8999/${BRAND_TARGET}/webview/index.html`
-    }
-    childExec(command, undefined, (err, stdout, stderr) => {
-        if (err) gutil.log(err)
-    })
-})
-
 gulp.task('watch', 'Start development server and watch for changes.', () => {
-    isWatching = true
+    LIVERELOAD = true
     startDevServer()
 
     // Watch files related to working on the documentation.
@@ -567,7 +561,7 @@ gulp.task('watch', 'Start development server and watch for changes.', () => {
     gulp.watch(path.join(__dirname, 'src', 'js', 'vendor.js'), ['js-vendor'])
 
     if (!['electron', 'webview'].includes(BUILD_TARGET)) {
-        gulp.watch(path.join(__dirname, 'src', 'manifest.json'), [`manifest-webext-${BUILD_TARGET}`])
+        gulp.watch(path.join(__dirname, 'src', 'manifest.json'), ['manifest-webext'])
         gulp.watch(path.join(__dirname, 'src', 'brand.json'), ['build'])
     }
 

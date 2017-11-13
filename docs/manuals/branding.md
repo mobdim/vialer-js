@@ -27,8 +27,9 @@ of Vialer-js:
 * Google Analytics ID
 
 
-# Build a branded version
-* Add your brand, e.g. `yourbrand` in the `brands` section of .vialer-jsrc by copy-pasting the `vialer` brand. Make sure this is valid JSON.
+# Building a branded version
+* Add your brand, e.g. `yourbrand` in the `brands` section of .vialer-jsrc by modifying the `vialer` brand or by adding the
+brand config next to the Vialer config. Make sure this is valid JSON.
 * Modify the color palette of `yourbrand` to match your brand's color-scheme.
 * Copy the `src/brand/vialer` directory and its content to `src/brand/yourbrand`. Make sure the name matches the key you used in the brands section of `.vialer-jsrc` exactly.
 * Modify the images in `src/brand/yourbrand/img` to match your brand. Do not reuse the branded images from Vialer!
