@@ -21,6 +21,11 @@ To be able to push to npm, an authorized developer first have to login to the
 npm login
 ```
 
+# Beta release
+1. Update the `CHANGELOG.md` with all the changes since the last version
+2. Suppose the next release will be 2.0.17. Bump the version in package.json to 2.0.17.0.
+3. Publish the Chrome version. 
+
 # Public release
 1. Update the `CHANGELOG.md` with all the changes since the last version
 
@@ -32,8 +37,7 @@ npm login
    git push origin master
    ```
 
-3. Publish the Chrome version. Specify `trustedTesters` as audience to publish the
-   version to the testers. Specify `default` to publish to the world.
+3. Publish the Chrome version.
 
    ```bash
    gulp deploy --target chrome --audience default
