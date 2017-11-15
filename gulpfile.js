@@ -29,7 +29,18 @@ settings.BRAND_TARGET = argv.brand ? argv.brand : 'vialer'
 settings.BUILD_DIR = process.env.BUILD_DIR || path.join(__dirname, 'build')
 settings.BUILD_TARGET = argv.target ? argv.target : 'chrome'
 settings.BUILD_TARGETS = ['chrome', 'firefox', 'electron', 'webview']
+// Exit when the build target is not in the allowed list.
+if (!settings.BUILD_TARGETS.includes(settings.BUILD_TARGET)) {
+    gutil.log(`Invalid build target: ${settings.BUILD_TARGET}`)
+    process.exit(0)
+}
+
 settings.DEPLOY_TARGET = argv.deploy ? argv.deploy : 'beta'
+// Exit when the deploy target is not in the allowed list.
+if (!['production', 'beta'].includes(settings.DEPLOY_TARGET)) {
+    gutil.log(`Invalid deployment target: '${settings.DEPLOY_TARGET}'`)
+    process.exit(0)
+}
 settings.LIVERELOAD = false
 settings.NODE_PATH = path.join(__dirname, 'node_modules') || process.env.NODE_PATH
 settings.PACKAGE = require('./package')
@@ -37,8 +48,6 @@ settings.SRC_DIR = path.join(__dirname, 'src')
 settings.SIZE_OPTIONS = {showFiles: true, showTotal: true}
 settings.VERBOSE = argv.verbose ? true : false
 
-if (settings.DEPLOY_TARGET === 'beta') settings.DISTRIBUTION_NAME = `${settings.BRAND_TARGET}-${settings.PACKAGE.version}-beta.zip`
-else settings.DISTRIBUTION_NAME = `${settings.BRAND_TARGET}-${settings.PACKAGE.version}.zip`
 // Force production mode when running certain tasks from
 // the commandline. Use this with care.
 if (['deploy', 'build-dist'].includes(argv._[0])) {
@@ -55,15 +64,8 @@ if (['deploy', 'build-dist'].includes(argv._[0])) {
 settings.NODE_ENV = process.env.NODE_ENV
 
 
-if (!settings.BUILD_TARGETS.includes(settings.BUILD_TARGET)) {
-    gutil.log(`Invalid build target: ${settings.BUILD_TARGET}`)
-    process.exit(0)
-}
 
-if (!['production', 'beta'].includes(settings.DEPLOY_TARGET)) {
-    gutil.log(`Invalid deployment target: '${settings.DEPLOY_TARGET}'`)
-    process.exit(0)
-}
+
 
 // Loads the Vialer settings from ~/.vialer-jsrc into the
 // existing settings object.
@@ -96,6 +98,9 @@ if (settings.VERBOSE) {
         all: {
             'brand=vialer': '',
             'target=chrome': 'chrome|firefox|electron|webview',
+        },
+        brandOnly: {
+            'brand=vialer': '',
         },
         browser: {
             'brand=vialer': '',
@@ -191,12 +196,12 @@ gulp.task('build-dist', 'Make an optimized build and generate a WebExtension zip
             })
         } else {
             gulp.src([`${buildDir}/**`], {base: buildDir})
-                .pipe(zip(settings.DISTRIBUTION_NAME))
+                .pipe(zip(helpers.distributionName(settings.BRAND_TARGET)))
                 .pipe(gulp.dest(`./dist/${settings.BRAND_TARGET}/${settings.BUILD_TARGET}/`))
                 .on('end', done)
         }
     })
-},{options: taskOptions.all})
+}, {options: taskOptions.all})
 
 
 gulp.task('build-run', 'Make a development build and run it in the target environment.', () => {
@@ -217,18 +222,25 @@ gulp.task('build-run', 'Make a development build and run it in the target enviro
 }, {options: taskOptions.all})
 
 
-gulp.task('deploy', `Deploy the build target to the ${settings.BUILD_TARGET} store.`, async() => {
-    await helpers.deploy(settings.BRAND_TARGET, settings.BUILD_TARGET, settings.DISTRIBUTION_NAME)
+gulp.task('deploy', 'Deploy a build to a store.', async() => {
+    await helpers.deploy(settings.BRAND_TARGET, settings.BUILD_TARGET, helpers.distributionName(settings.BRAND_TARGET))
 }, {options: taskOptions.browser})
 
 
-gulp.task('deploy-all-targets', 'Deploy a (branded) plugin to the Chrome and Firefox store.', async() => {
-    await helpers.deploy(settings.BRAND_TARGET, 'chrome', settings.DISTRIBUTION_NAME)
-    await helpers.deploy(settings.BRAND_TARGET, 'firefox', settings.DISTRIBUTION_NAME)
+gulp.task('deploy-brand', 'Deploy a brand to all stores.', async() => {
+    await helpers.deploy(settings.BRAND_TARGET, 'chrome', helpers.distributionName(settings.BRAND_TARGET))
+    await helpers.deploy(settings.BRAND_TARGET, 'firefox', helpers.distributionName(settings.BRAND_TARGET))
+}, {options: taskOptions.brandOnly})
+
+
+gulp.task('deploy-brands', 'Deploy all brands to all stores.', async() => {
+    let chromeActions = settings.brands.filter((brand) => helpers.deploy(brand, 'chrome', helpers.distributionName(brand)))
+    let firefoxActions = settings.brands.filter((brand) => helpers.deploy(brand, 'firefox', helpers.distributionName(brand)))
+    await Promise.all(chromeActions.concat(firefoxActions))
 })
 
 
-gulp.task('docs', 'Generate documentation.', (done) => {
+gulp.task('docs', 'Generate docs.', (done) => {
     let execCommand = `node ${settings.NODE_PATH}/jsdoc/jsdoc.js ./src/js -R ./README.md -c ./.jsdoc.json -d ${settings.BUILD_DIR}/docs --package ./package.json`
     childExec(execCommand, undefined, (err, stdout, stderr) => {
         if (stderr) gutil.log(stderr)
@@ -239,7 +251,7 @@ gulp.task('docs', 'Generate documentation.', (done) => {
 })
 
 
-gulp.task('docs-deploy', 'Push the docs build directory to github pages.', ['docs'], () => {
+gulp.task('docs-deploy', 'Publish docs on github pages.', ['docs'], () => {
     return gulp.src(`${settings.BRAND_TARGET}/${settings.BUILD_DIR}/docs/**/*`).pipe(ghPages())
 })
 

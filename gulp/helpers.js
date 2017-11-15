@@ -54,7 +54,7 @@ class Helpers {
     * @param {String} distributionName - Name of the generated build zip.
     * @returns {Promise} - Resolves when done deploying.
     */
-    deploy(brandName, buildType, distributionName, cb) {
+    deploy(brandName, buildType, distributionName) {
         return new Promise((resolve, reject) => {
             const PACKAGE = require('../package')
 
@@ -66,7 +66,7 @@ class Helpers {
                     let extensionId
                     // Deploy to production or test environment, based on DEPLOY_TARGET.
                     if (this.settings.DEPLOY_TARGET === 'production') extensionId = api.extensionId
-                    else if (this.settings.DEPLOY_TARGET === 'beta') extensionId = api.extensionId_test
+                    else if (this.settings.DEPLOY_TARGET === 'beta') extensionId = api.extensionId_beta
 
                     const webStore = require('chrome-webstore-upload')({
                         clientId: api.clientId,
@@ -125,6 +125,21 @@ class Helpers {
 
 
     /**
+    * Generate a brand-specific distribution name.
+    * @param {String} brandName - The brand name to use for the distribution.
+    * @returns {String} - The distribution name to use.
+    */
+    distributionName(brandName) {
+        let distributionName = `${brandName}-${this.settings.PACKAGE.version}`
+        if (this.settings.DEPLOY_TARGET === 'beta') {
+            distributionName += '-beta'
+        }
+        distributionName += '.zip'
+        return distributionName
+    }
+
+
+    /**
     * Converts branding data to a valid SCSS variables string.
     * @param {Object} brandProperties: Key/value object that's converted to a SCSS variable string.
     * @returns {String} - Scss-formatted variables string.
@@ -155,9 +170,9 @@ class Helpers {
         if (buildType === 'chrome') {
             manifest.options_ui.chrome_style = false
         } else if (buildType === 'firefox') {
-            // The id_test property should not end up in the manifest.
-            let testId = this.settings.brands[brandName].store.firefox.gecko.id_test
-            delete this.settings.brands[brandName].store.firefox.gecko.id_test
+            // The id_beta property should not end up in the manifest.
+            let betaId = this.settings.brands[brandName].store.firefox.gecko.id_beta
+            delete this.settings.brands[brandName].store.firefox.gecko.id_beta
 
             manifest.options_ui.browser_style = true
             manifest.applications = {
@@ -165,7 +180,7 @@ class Helpers {
             }
             // The deploy target for Firefox is specified in the manifest,
             // instead of being passed with the API call to the store.
-            if (this.settings.DEPLOY_TARGET === 'beta') manifest.applications.gecko.id = testId
+            if (this.settings.DEPLOY_TARGET === 'beta') manifest.applications.gecko.id = betaId
         }
 
         manifest.browser_action.default_title = this.settings.brands[brandName].name

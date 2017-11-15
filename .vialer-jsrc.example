@@ -24,6 +24,7 @@
                 "firefox": {
                     "gecko": {
                         "id": "",
+                        "id_beta": "",
                          "strict_min_version": "50.0"
                     },
                     "apiKey": "",
@@ -31,7 +32,7 @@
                 },
                 "chrome": {
                     "extensionId": "",
-                    "extensionId_test": "",
+                    "extensionId_beta": "",
                     "clientId": "",
                     "clientSecret": "",
                     "refreshToken": ""
