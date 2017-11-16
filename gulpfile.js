@@ -28,7 +28,7 @@ let settings = {}
 settings.BRAND_TARGET = argv.brand ? argv.brand : 'vialer'
 settings.BUILD_DIR = process.env.BUILD_DIR || path.join(__dirname, 'build')
 settings.BUILD_TARGET = argv.target ? argv.target : 'chrome'
-settings.BUILD_TARGETS = ['chrome', 'firefox', 'electron', 'webview']
+settings.BUILD_TARGETS = ['chrome', 'electron', 'edge', 'firefox', 'webview']
 // Exit when the build target is not in the allowed list.
 if (!settings.BUILD_TARGETS.includes(settings.BUILD_TARGET)) {
     gutil.log(`Invalid build target: ${settings.BUILD_TARGET}`)
@@ -118,11 +118,10 @@ if (settings.VERBOSE) {
 
 // Notify developer about some essential build flag values.
 gutil.log('BUILD FLAGS:')
-gutil.log(`- TARGET: ${settings.BUILD_TARGET}`)
 gutil.log(`- BRAND: ${settings.BRAND_TARGET}`)
 gutil.log(`- DEPLOY: ${settings.DEPLOY_TARGET}`)
 gutil.log(`- PRODUCTION: ${settings.PRODUCTION}`)
-// ENDOF: Build flags definition.
+gutil.log(`- TARGET: ${settings.BUILD_TARGET}`)
 
 
 gulp.task('assets', 'Copy (branded) assets to the build directory.', () => {
@@ -161,9 +160,12 @@ gulp.task('build-all-targets', 'Build all targets.', (done) => {
     runSequence(pluginTargetTasks, () => {
         settings.BUILD_TARGET = 'firefox'
         runSequence(pluginTargetTasks, () => {
-            settings.BUILD_TARGET = 'electron'
-            runSequence(electronTargetTasks, () => {
-                done()
+            settings.BUILD_TARGET = 'edge'
+            runSequence(pluginTargetTasks, () => {
+                settings.BUILD_TARGET = 'electron'
+                runSequence(electronTargetTasks, () => {
+                    done()
+                })
             })
         })
     })

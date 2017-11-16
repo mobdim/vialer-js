@@ -87,7 +87,7 @@ class Skeleton extends EventEmitter {
 
             if (tabId) {
                 if (this.verbose) this.logger.debug(`${this}emit ipc event '${event}' to tab ${tabId}`)
-                this.browser.tabs.sendMessage(tabId, payloadData)
+                browser.tabs.sendMessage(tabId, payloadData)
                 return
             } else if (parent) {
                 if (this.verbose) this.logger.debug(`${this}emit ipc event '${event}' to parent`)
@@ -100,10 +100,10 @@ class Skeleton extends EventEmitter {
                 const callback = data.callback
                 // Make sure that functions are not part of the payload data.
                 delete data.callback
-                this.browser.runtime.sendMessage(payloadData, callback)
+                browser.runtime.sendMessage(payloadData, callback)
             } else {
                 if (this.verbose) this.logger.debug(`${this}emit ipc event '${event}'`)
-                this.browser.runtime.sendMessage(payloadData)
+                browser.runtime.sendMessage(payloadData)
             }
         }
         // The web version will always use a local emitter, no matter what
@@ -133,12 +133,9 @@ class Skeleton extends EventEmitter {
             }
 
             environment.extension.isChrome = navigator.userAgent.toLowerCase().includes('chrome')
+            environment.extension.isEdge = navigator.userAgent.toLowerCase().includes('edge')
             environment.extension.isFirefox = navigator.userAgent.toLowerCase().includes('firefox')
-
-            if (environment.extension.isChrome) this.browser = chrome
-            else this.browser = browser
         }
-
 
         environment.os = {
             linux: navigator.platform.match(/(Linux)/i) ? true : false,
@@ -155,7 +152,7 @@ class Skeleton extends EventEmitter {
     * by mapping an IPC event to the EventEmitter.
     */
     ipcListener() {
-        this.browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (request.data) {
                 // Add extra contextual information about sender to payload.
                 request.data.sender = sender
