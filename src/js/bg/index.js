@@ -22,12 +22,6 @@ class BackgroundApp extends Skeleton {
     constructor(options) {
         super(options)
 
-        // Clears localstorage if the schema changed after a plugin update.
-        if (!this.store.validSchema()) {
-            this.modules.user.logout()
-            return
-        }
-
         // Keep track of some notifications.
         this.store.set('notifications', {})
 
@@ -50,6 +44,23 @@ class BackgroundApp extends Skeleton {
                 browser.browserAction.setIcon({path: 'img/icon-menubar-active.png'})
             }
         }
+    }
+
+
+    /**
+    * Setup the SIP stack, before loading any modules.
+    */
+    _init() {
+        this.settings = {
+            analyticsId: process.env.ANALYTICS_ID,
+            c2d: 'true',
+            platformUrl: this.getPlatformUrl(),
+            realm: this.getWebsocketUrl(),
+        }
+        this.timer = new Timer(this)
+        this.analytics = new Analytics(this, this.settings.analyticsId)
+        this.api = new Api(this)
+        this.sip = new Sip(this)
     }
 
 
@@ -104,6 +115,20 @@ class BackgroundApp extends Skeleton {
     }
 
 
+    initStore() {
+        // Restore the state or start with a state template.
+        let stateObj = this.store.get('state')
+        if (stateObj) this.state = stateObj
+        else this.state = this.getDefaultState()
+
+        // Clears localstorage if the schema changed after a plugin update.
+        if (!this.store.validSchema()) {
+            this.modules.user.logout()
+            return
+        }
+    }
+
+
     /**
     * Reload all modules that have this method implemented.
     * @param {Boolean} update - Module indicator to update instead of (re)load.
@@ -155,23 +180,6 @@ class BackgroundApp extends Skeleton {
     */
     version() {
         return process.env.VERSION
-    }
-
-
-    /**
-    * Setup the SIP stack, before loading any modules.
-    */
-    _init() {
-        this.settings = {
-            analyticsId: process.env.ANALYTICS_ID,
-            c2d: 'true',
-            platformUrl: this.getPlatformUrl(),
-            realm: this.getWebsocketUrl(),
-        }
-        this.timer = new Timer(this)
-        this.analytics = new Analytics(this, this.settings.analyticsId)
-        this.api = new Api(this)
-        this.sip = new Sip(this)
     }
 }
 

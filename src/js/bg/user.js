@@ -33,7 +33,7 @@ class UserModule {
     */
     login(username, password) {
         this.app.api.setupClient(username, password)
-        this.app.api.client.get('api/permission/systemuser/profile/').then((res) => {
+        this.app.api.client.get('api/permission/systemuser/profile/').then(async(res) => {
             if (this.app.api.OK_STATUS.includes(res.status)) {
                 let user = res.data
                 if (!user.client) {
@@ -43,8 +43,14 @@ class UserModule {
 
                 // Parse and set the client id as a new property.
                 user.client_id = user.client.replace(/[^\d.]/g, '')
-                this.app.store.set('user', user)
 
+                const _res = await this.app.api.client.get('api/userdestination/')
+                const phoneAccountId = _res.data.objects[0].selecteduserdestination.phoneaccount
+                const __res = await this.app.api.client.get(`api/phoneaccount/phoneaccount/${phoneAccountId}`)
+                Object.assign(user, {
+                    selectedUserdestination: __res.data,
+                })
+                this.app.store.set('user', user)
                 // Perform some actions on login.
                 this.app.emit('user:login.success', {user: user}, 'both')
                 // Reset seen notifications.

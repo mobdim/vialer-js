@@ -11,11 +11,6 @@ class AvailabilityModule {
         this.hasUI = true
         this.app.modules.availability = this
 
-        this.addListeners()
-    }
-
-
-    addListeners() {
         /**
          * Update availability by calling the API, then emit
          * to the popup that the choices need to be updated.
@@ -45,6 +40,7 @@ class AvailabilityModule {
         const phoneaccounts = userdestination.phoneaccounts
 
         let options = []
+        let selected = null
         fixeddestinations.forEach((fixeddestination) => {
             let option = {
                 label: `${fixeddestination.phonenumber}/${fixeddestination.description}`,
@@ -53,6 +49,7 @@ class AvailabilityModule {
             if (parseInt(fixeddestination.id) === parseInt(selectedFixeddestinationId)) {
                 this.app.logger.debug(`${this}set selected fixeddestination ${selectedFixeddestinationId}`)
                 option.selected = true
+                selected = option.value
             }
             // Add fixed destination to options.
             options.push(option)
@@ -65,12 +62,16 @@ class AvailabilityModule {
             if (parseInt(phoneaccount.id) === parseInt(selectedPhoneaccountId)) {
                 this.app.logger.debug(`${this}set selected phoneaccount ${selectedPhoneaccountId}`)
                 option.selected = true
+                selected = option.value
             }
             // Add phone account to options.
             options.push(option)
         })
 
-        return options
+        return {
+            options,
+            selected: selected,
+        }
     }
 
 
@@ -141,9 +142,7 @@ class AvailabilityModule {
     */
     _load() {
         this.app.api.client.get('api/userdestination/').then((res) => {
-            this.app.emit('ui:widget.reset', {name: 'availability'})
             if (this.app.api.OK_STATUS.includes(res.status)) {
-                this.app.emit('availability:reset')
                 // There is only one userdestination so objects[0] is the right
                 // (and only) one.
                 let userdestination = res.data.objects[0]
@@ -161,17 +160,21 @@ class AvailabilityModule {
                 let selectedPhoneaccountId = userdestination.selecteduserdestination.phoneaccount
 
                 // Build options for the availability dropdown.
-                let options = this.availabilityOptions(userdestination, selectedFixeddestinationId,
-                    selectedPhoneaccountId)
+                let destinations = this.availabilityOptions(userdestination, selectedFixeddestinationId, selectedPhoneaccountId)
 
                 let widgetState = this.app.store.get('widgets')
-                widgetState.availability.options = options
+                widgetState.availability.options = destinations.options
                 widgetState.availability.unauthorized = false
                 this.app.store.set('widgets', widgetState)
 
                 // Fill the dropdown with these choices.
-                if (options.length) {
-                    this.app.emit('availability:fill_select', {destinations: options})
+                if (destinations.options.length) {
+                    this.app.emit('fg:set_state', {
+                        availability: {
+                            destinations: destinations,
+                        },
+                    })
+                    // this.app.emit('availability:fill_select', {destinations: options})
                 }
 
                 // Set an icon depending on whether the user is available.
@@ -230,13 +233,15 @@ class AvailabilityModule {
             const userdestination = userData.userdestination
             const selectedFixeddestinationId = userdestination.selecteduserdestination.fixeddestination
             const selectedPhoneaccountId = userdestination.selecteduserdestination.phoneaccount
-            this.app.logger.debug(
-                `${this}restoring availability options from ${selectedPhoneaccountId}/${selectedFixeddestinationId}`)
-            const options = this.availabilityOptions(userdestination, selectedFixeddestinationId,
-                selectedPhoneaccountId)
-            this.app.emit('availability:reset')
-            if (options.length) {
-                this.app.emit('availability:fill_select', {destinations: options})
+            this.app.logger.debug(`${this}restoring availability options from ${selectedPhoneaccountId}/${selectedFixeddestinationId}`)
+            const destinations = this.availabilityOptions(userdestination, selectedFixeddestinationId, selectedPhoneaccountId)
+
+            if (destinations.options.length) {
+                this.app.emit('fg:set_state', {
+                    availability: {
+                        destinations: destinations,
+                    },
+                })
             }
         }
 

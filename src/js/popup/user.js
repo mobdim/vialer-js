@@ -5,7 +5,6 @@ class UserModule {
 
     constructor(app) {
         this.app = app
-        this.addListeners()
     }
 
 

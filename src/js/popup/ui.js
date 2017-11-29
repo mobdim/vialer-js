@@ -12,7 +12,7 @@ class UiModule {
     */
     constructor(app) {
         this.app = app
-        this.addListeners()
+        //TODO: MOVE TO COMPONENTS
         Object.assign(Object.getPrototypeOf(this), ui())
     }
 
@@ -21,33 +21,6 @@ class UiModule {
         // The popout behaves different from the popover. The contacts
         // widget is open by default.
         if (this.app.env.isExtension && this.app.env.role.popout) $('html').addClass('popout')
-
-        this.app.on('ui:widget.close', (data) => {
-            // Popout has only the contacts widget open. It can't be closed.
-            if (!this.app.env.isExtension || (this.app.env.isExtension && !this.app.env.role.popout)) {
-                this.closeWidget(data.name)
-            }
-        })
-
-        this.app.on('ui:widget.busy', (data) => {
-            this.busyWidget(data.name)
-        })
-
-        this.app.on('ui.widget.open', (data) => {
-            this.openWidget(data.name)
-        })
-
-        this.app.on('ui:widget.reset', (data) => {
-            this.resetWidget(data.name)
-        })
-
-        this.app.on('ui:widget.unauthorized', (data) => {
-            this.unauthorizeWidget(data.name)
-        })
-
-        this.app.on('ui:mainpanel.loading', (data) => {
-            $('#refresh').addClass('fa-spin')
-        })
 
         // Spin refresh icon while reloading widgets.
         this.app.on('ui:mainpanel.ready', (data) => {
@@ -146,7 +119,6 @@ class UiModule {
         if (!widget) return
         const data = widget.data()
         this.app.logger.debug(`${this}set ui state for widget '${data.widget}' to busy`)
-        this.resetWidget(widget)
         $(widget).addClass('busy')
 
         // The popout doesn't change the open/closed status of ANY widget.
@@ -224,18 +196,6 @@ class UiModule {
 
 
     /**
-    * Set the busy indicator.
-    * @param {String} widgetOrWidgetName - Reference to widget to reset.
-    */
-    resetWidget(widgetOrWidgetName) {
-        let widget = this.getWidget(widgetOrWidgetName)
-        const data = widget.data()
-        this.app.logger.debug(`${this}resetting ui state for widget '${data.widget}'`)
-        $(widget).removeClass('busy').removeClass('unauthorized')
-    }
-
-
-    /**
      * Restore the widget state from localstorage.
      */
     restoreWidgetState() {
@@ -287,8 +247,7 @@ class UiModule {
     */
     unauthorizeWidget(widgetOrWidgetName) {
         const widget = this.getWidget(widgetOrWidgetName)
-        this.resetWidget(widget)
-        widget.addClass('unauthorized')
+        console.log("UNAUTHORIZED STATE WIDGET")
     }
 
 
